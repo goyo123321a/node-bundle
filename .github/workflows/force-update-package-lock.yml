@@ -1,0 +1,64 @@
+# ============================================================
+# 工作流名称：强制更新 package-lock.json
+# 说明：无论是否存在 package-lock.json，都强制重新生成并提交
+# 触发方式：手动触发（workflow_dispatch）
+# 权限：需要写入权限以推送代码
+# ============================================================
+name: Force Update package-lock.json
+
+on:
+  workflow_dispatch:
+    inputs:
+      update_dependencies:
+        description: '是否同时更新依赖版本（会修改 package.json 中的版本范围）'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  force-update:
+    runs-on: ubuntu-latest
+    steps:
+      # 检出代码
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 设置 Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # 根据输入决定是否更新依赖版本
+      # 如果 update_dependencies 为 true，则执行 npm update（会修改 package.json 和 package-lock.json）
+      # 否则仅重新生成 lock 文件（不修改 package.json 中的版本约束）
+      - name: Update dependencies (if requested)
+        if: github.event.inputs.update_dependencies == 'true'
+        run: |
+          npm update
+
+      # 强制重新生成 package-lock.json（不安装依赖，速度快）
+      - name: Force regenerate package-lock.json
+        run: |
+          npm install --package-lock-only
+
+      # 提交并推送更新后的锁文件
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # 添加所有变更（包括 package.json 如果有更新）
+          git add package-lock.json
+          # 如果 update_dependencies 为 true，package.json 也可能变动
+          if [ "${{ github.event.inputs.update_dependencies }}" == "true" ]; then
+            git add package.json
+          fi
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: force update package-lock.json [skip ci]"
+            git push
+          fi
