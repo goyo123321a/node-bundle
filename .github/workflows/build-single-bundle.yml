@@ -1,0 +1,61 @@
+# ================================================================
+# 工作流名称：构建单个 bundle.js
+# 说明：使用 esbuild 将 index.js 及其依赖打包成单个 bundle.js，
+#       同时将 index.html 一并打包（如果有），并上传为 artifact。
+# 触发方式：手动触发（workflow_dispatch）
+# ================================================================
+name: Build Single Bundle
+
+on:
+  workflow_dispatch:                     # 手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # 检出代码
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 设置 Node.js（使用 v22 LTS，避免弃用警告）
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: package.json   # 即使没有 lock 文件也能缓存
+
+      # 安装依赖（自适应）
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            echo "Found package-lock.json, using npm ci"
+            npm ci
+          else
+            echo "No package-lock.json found, using npm install"
+            npm install
+          fi
+
+      # 全局安装 esbuild（用于打包）
+      - name: Install esbuild
+        run: npm install -g esbuild
+
+      # 使用 esbuild 生成 bundle.js
+      - name: Build bundle.js
+        run: |
+          esbuild index.js --bundle --platform=node --minify --outfile=bundle.js
+
+      # 准备产物（bundle.js + 可选的 index.html）
+      - name: Prepare artifacts
+        run: |
+          mkdir -p dist
+          cp bundle.js dist/
+          if [ -f index.html ]; then cp index.html dist/; fi
+
+      # 上传 artifact（保留 30 天）
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-bundle
+          path: dist/
+          retention-days: 30
